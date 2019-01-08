@@ -1,0 +1,149 @@
+---
+title: "2019-01-08_Bhaumik_UMMAPAges"
+author: "Nicolas May"
+date: "1/8/2019"
+output: 
+  html_document:
+    theme: cerulean
+    highlight: zenburn
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Load Libraries, Useful Variables
+
+```{r}
+library(dplyr)
+library(lubridate)
+library(knitr)
+library(kableExtra)
+source("~/Desktop/config.R")
+```
+
+
+# Get Data
+
+## Define REDCap Fields
+
+```{r}
+fields_u3_raw <- c("ptid"
+                   , "form_date"
+                   , "dob")
+fields_u3 <- fields_u3_raw %>% paste(collapse = ",")
+```
+
+## Fetch Data via REDCap API
+
+```{r}
+json_u3 <- RCurl::postForm(
+  uri=REDCAP_API_URI,
+  token=REDCAP_API_TOKEN_UDS3,
+  content="record",
+  format="json",
+  type="flat",
+  fields=fields_u3,
+  rawOrLabel="raw",
+  rawOrLabelHeaders="raw",
+  exportCheckboxLabel="false",
+  exportSurveyFields="false",
+  exportDataAccessGroups="false",
+  returnFormat="json"
+)
+df_u3 <- jsonlite::fromJSON(json_u3)
+```
+
+
+# Clean Data
+
+## Clean `NA` Values, Missing `dob` Values 
+
+```{r}
+df_u3_cln <- df_u3 %>% 
+  na_if("") %>% 
+  filter(!is.na(dob))
+```
+
+## Correct Field Types
+
+```{r}
+df_u3_cln <- df_u3_cln %>% 
+  mutate(dob = as_date(dob))
+```
+
+
+## Order By `ptid`, `form_date` (desc)
+
+```{r}
+df_u3_cln_ord <- df_u3_cln %>% 
+  arrange(ptid, desc(form_date))
+```
+
+## Keep Only Most Recent Visit
+
+```{r}
+df_u3_cln_ord_rec <- df_u3_cln_ord %>% 
+  mutate(visit_unit = 1L) %>% 
+  group_by(ptid) %>% 
+  mutate(visit_cnt = as.integer(cumsum(visit_unit))) %>% 
+  ungroup() %>% 
+  filter(visit_cnt == 1L) %>% 
+  select(-form_date, -visit_unit, -visit_cnt)
+```
+
+
+# Derive New Fields
+
+## Calculate Age (as of `r Sys.Date()`)
+
+```{r}
+df_u3_cln_ord_rec_mut <- df_u3_cln_ord_rec %>% 
+  mutate(age = round(interval(dob, Sys.Date()) / dyears(1), 2))
+```
+
+
+# Tabulate results
+
+```{r}
+min(df_u3_cln_ord_rec_mut$age)
+max(df_u3_cln_ord_rec_mut$age)
+df_u3_cln_ord_rec_mut %>% 
+  mutate(age_range = case_when(
+    between(age,  50.000,  54.999) ~ "50-54",
+    between(age,  55.000,  59.999) ~ "55-59",
+    between(age,  60.000,  64.999) ~ "60-64",
+    between(age,  65.000,  69.999) ~ "65-69",
+    between(age,  70.000,  74.999) ~ "70-74",
+    between(age,  75.000,  79.999) ~ "75-79",
+    between(age,  80.000,  84.999) ~ "80-84",
+    between(age,  85.000,  89.999) ~ "85-89",
+    between(age,  90.000,  94.999) ~ "90-94",
+    between(age,  95.000,  99.999) ~ "95-99",
+    between(age, 100.000, 104.999) ~ "100-104",
+    between(age, 105.000, 109.999) ~ "105-109",
+    between(age, 110.000, 114.999) ~ "110-114",
+    between(age, 115.000, 119.999) ~ "115-119"
+  )) %>% 
+  group_by(age_range) %>%
+  summarize(n = n()) %>% 
+  kable() %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "responsive"))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
